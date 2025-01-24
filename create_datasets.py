@@ -35,10 +35,8 @@ def get_metadata(dataset, name):
     result = {}
     result["name"] = getattr(dataset, "name", name)
     for key in ["description", "source", "target"]:
-        try:
-            result[key] = getattr(dataset, key)
-        except AttributeError:
-            pass
+        if value := getattr(dataset, key, None):
+            result[key] = value
     return result
 
 
@@ -85,8 +83,72 @@ def _world_bank():
     return ("country_happiness", result, metadata)
 
 
+def _movielens():
+    ratings = datasets.fetch_movielens("ratings").X
+    movies_dataset = datasets.fetch_movielens("movies")
+    movies = movies_dataset.X
+    result = {"movies": movies, "ratings": ratings}
+    metadata = get_metadata(movies_dataset, "movielens")
+    return "movielens", result, metadata
+
+
+def _bikes():
+    data = pd.read_csv(
+        "https://raw.githubusercontent.com/skrub-data/datasets/master"
+        "/data/bike-sharing-dataset.csv"
+    )
+    return (
+        "bike_sharing",
+        {"bike_sharing": data},
+        {"name": "bike_sharing", "target": "cnt"},
+    )
+
+
+def _vg_sales():
+    url = (
+        "https://raw.githubusercontent.com/William2064888/vgsales.csv/main/vgsales.csv"
+    )
+    X = pd.read_csv(
+        url,
+        sep=";",
+        on_bad_lines="skip",
+    )
+    return (
+        "videogame_sales",
+        {"videogame_sales": X},
+        {"name": "videogame_sales", "source": url, "target": "Global_Sales"},
+    )
+
+
+def _flights():
+    flights = datasets.fetch_figshare("41771418").X
+    airports = datasets.fetch_figshare("41710257").X
+    weather = datasets.fetch_figshare("41771457").X
+    stations = datasets.fetch_figshare("41710524").X
+    return (
+        "flight_delays",
+        {
+            "flights": flights,
+            "airports": airports,
+            "weather": weather,
+            "stations": stations,
+        },
+        {"name": "flight_delays"},
+    )
+
+
+def _fraud():
+    fraud = datasets.fetch_credit_fraud()
+    return (
+        "credit_fraud",
+        {"baskets": fraud.baskets, "products": fraud.products},
+        get_metadata(fraud, "credit_fraud"),
+    )
+
+
 def iter_datasets():
     simple_fetchers = {f for f in datasets.__all__ if f.startswith("fetch_")} - {
+        "fetch_movielens",
         "fetch_world_bank_indicator",
         "fetch_figshare",
         "fetch_credit_fraud",
@@ -96,13 +158,12 @@ def iter_datasets():
     }
     for fetcher in sorted(simple_fetchers):
         yield load_simple_dataset(getattr(datasets, fetcher))
-    fraud = datasets.fetch_credit_fraud()
-    yield (
-        "credit_fraud",
-        {"baskets": fraud.baskets, "products": fraud.products},
-        get_metadata(fraud, "credit_fraud"),
-    )
+    yield _fraud()
     yield _world_bank()
+    yield _movielens()
+    yield _bikes()
+    yield _vg_sales()
+    yield _flights()
 
 
 def make_skrub_datasets():
@@ -133,6 +194,8 @@ def make_skrub_datasets():
 
     checksums = {}
     for dataset_name, dataframes, metadata in iter_datasets():
+        if len(dataframes) > 1:
+            metadata.pop("target", None)
         checksums[dataset_name] = create_archive(
             all_datasets_dir, all_archives_dir, dataset_name, dataframes, metadata
         )
